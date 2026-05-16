@@ -6,19 +6,29 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FiPlus, FiX, FiColumns, FiFile, FiFolder, FiChevronDown, FiChevronRight } from 'react-icons/fi'
+import { FiPlus, FiX, FiColumns, FiFile, FiFolder, FiChevronDown, FiChevronRight, FiFolderPlus } from 'react-icons/fi'
 
-type FileTab = {
+type FileNode = {
   id: string
   name: string
-  content: string
-  language: string
+  type: 'file' | 'folder'
+  content?: string
+  language?: string
+  children?: FileNode[]
+  parentId?: string | null
 }
 
 function EditorComponent() {
   const [user, setUser] = useState<any>(null)
-  const [files, setFiles] = useState<FileTab[]>([
-    { id: '1', name: 'main.py', content: 'a = 10\nprint(a)', language: 'python' }
+  const [tree, setTree] = useState<FileNode[]>([
+    { 
+      id: 'root', 
+      name: 'ASCET-PROJECT', 
+      type: 'folder', 
+      children: [
+        { id: '1', name: 'main.py', type: 'file', content: 'a = 10\nprint(a)', language: 'python', parentId: 'root' }
+      ]
+    }
   ])
   const [activeFileId, setActiveFileId] = useState('1')
   const [splitFileId, setSplitFileId] = useState<string | null>(null)
@@ -30,12 +40,34 @@ function EditorComponent() {
   const [showExplain, setShowExplain] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [lastSaved, setLastSaved] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['root']))
   const router = useRouter()
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
 
-  const activeFile = files.find(f => f.id === activeFileId) || files[0]
-  const splitFile = files.find(f => f.id === splitFileId)
+  const findFile = (nodes: FileNode[], id: string): FileNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node
+      if (node.children) {
+        const found = findFile(node.children, id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const getAllFiles = (nodes: FileNode[]): FileNode[] => {
+    let files: FileNode[] = []
+    for (const node of nodes) {
+      if (node.type === 'file') files.push(node)
+      if (node.children) files = [...files,...getAllFiles(node.children)]
+    }
+    return files
+  }
+
+  const activeFile = findFile(tree, activeFileId)
+  const splitFile = splitFileId? findFile(tree, splitFileId) : null
+  const allFiles = getAllFiles(tree)
 
   useEffect(() => {
     const loadCode = async () => {
@@ -43,11 +75,10 @@ function EditorComponent() {
         const snap = await getDoc(doc(db, 'snippets', shareId))
         if (snap.exists()) {
           const data = snap.data()
-          if (data.files) {
-            setFiles(data.files)
-            setActiveFileId(data.files[0].id)
-          } else {
-            setFiles([{ id: '1', name: 'main.py', content: data.code, language: data.language }])
+          if (data.tree) {
+            setTree(data.tree)
+            const firstFile = getAllFiles(data.tree)[0]
+            if (firstFile) setActiveFileId(firstFile.id)
           }
           setInput(data.input || '')
           toast.success('Loaded shared project')
@@ -63,75 +94,131 @@ function EditorComponent() {
         const snap = await getDoc(doc(db, 'users', currentUser.uid))
         if (snap.exists()) {
           const data = snap.data()
-          if (data.files) setFiles(data.files)
+          if (data.tree) setTree(data.tree)
         }
       })
     }
     loadCode()
   }, [shareId, router])
 
-  // Auto-save every 3 seconds after you stop typing
   useEffect(() => {
     if (!user || shareId) return
-    
     const timer = setTimeout(async () => {
       try {
         await setDoc(doc(db, 'users', user.uid), {
-          files, updatedAt: serverTimestamp()
+          tree, updatedAt: serverTimestamp()
         })
         setLastSaved(new Date().toLocaleTimeString())
       } catch (e) {
         console.log('Auto-save failed')
       }
     }, 3000)
-
     return () => clearTimeout(timer)
-  }, [files, user, shareId])
+  }, [tree, user, shareId])
 
-  const updateFile = (id: string, content: string) => {
-    setFiles(files.map(f => f.id === id? {...f, content } : f))
+  const updateFileContent = (id: string, content: string) => {
+    const updateNode = (nodes: FileNode[]): FileNode[] => {
+      return nodes.map(node => {
+        if (node.id === id) return {...node, content }
+        if (node.children) return {...node, children: updateNode(node.children) }
+        return node
+      })
+    }
+    setTree(updateNode(tree))
   }
 
-  const addFile = () => {
+  const addFile = (parentId: string = 'root') => {
     const name = prompt('File name? (e.g. utils.py, main.js)')
     if (!name) return
     const ext = name.split('.').pop()
     const langMap: any = { py: 'python', js: 'javascript', java: 'java', cpp: 'cpp', c: 'cpp', ts: 'typescript', html: 'html', css: 'css' }
-    const newFile: FileTab = {
+    const newFile: FileNode = {
       id: Date.now().toString(),
       name,
+      type: 'file',
       content: '',
-      language: langMap[ext || ''] || 'python'
+      language: langMap[ext || ''] || 'python',
+      parentId
     }
-    setFiles([...files, newFile])
+    
+    const addToTree = (nodes: FileNode[]): FileNode[] => {
+      return nodes.map(node => {
+        if (node.id === parentId) {
+          return {...node, children: [...(node.children || []), newFile] }
+        }
+        if (node.children) return {...node, children: addToTree(node.children) }
+        return node
+      })
+    }
+    setTree(addToTree(tree))
     setActiveFileId(newFile.id)
+    setExpanded(new Set([...expanded, parentId]))
   }
 
-  const closeFile = (id: string) => {
-    if (files.length === 1) return toast.error('Cannot close last file')
-    const newFiles = files.filter(f => f.id!== id)
-    setFiles(newFiles)
-    if (activeFileId === id) setActiveFileId(newFiles[0].id)
+  const addFolder = (parentId: string = 'root') => {
+    const name = prompt('Folder name?')
+    if (!name) return
+    const newFolder: FileNode = {
+      id: Date.now().toString(),
+      name,
+      type: 'folder',
+      children: [],
+      parentId
+    }
+    
+    const addToTree = (nodes: FileNode[]): FileNode[] => {
+      return nodes.map(node => {
+        if (node.id === parentId) {
+          return {...node, children: [...(node.children || []), newFolder] }
+        }
+        if (node.children) return {...node, children: addToTree(node.children) }
+        return node
+      })
+    }
+    setTree(addToTree(tree))
+    setExpanded(new Set([...expanded, parentId, newFolder.id]))
+  }
+
+  const deleteNode = (id: string) => {
+    if (allFiles.length === 1 && findFile(tree, id)?.type === 'file') {
+      return toast.error('Cannot delete last file')
+    }
+    if (!confirm('Delete this?')) return
+    
+    const removeFromTree = (nodes: FileNode[]): FileNode[] => {
+      return nodes.filter(node => {
+        if (node.id === id) return false
+        if (node.children) node.children = removeFromTree(node.children)
+        return true
+      })
+    }
+    setTree(removeFromTree(tree))
+    if (activeFileId === id) {
+      const firstFile = getAllFiles(tree.filter(n => n.id!== id))[0]
+      if (firstFile) setActiveFileId(firstFile.id)
+    }
     if (splitFileId === id) setSplitFileId(null)
   }
 
-  const deleteFile = (id: string) => {
-    if (files.length === 1) return toast.error('Cannot delete last file')
-    if (!confirm('Delete this file?')) return
-    closeFile(id)
+  const toggleFolder = (id: string) => {
+    const newExpanded = new Set(expanded)
+    if (newExpanded.has(id)) newExpanded.delete(id)
+    else newExpanded.add(id)
+    setExpanded(newExpanded)
   }
 
   const toggleSplit = () => {
     if (splitFileId) {
       setSplitFileId(null)
     } else {
-      const otherFile = files.find(f => f.id!== activeFileId)
+      const otherFile = allFiles.find(f => f.id!== activeFileId)
       if (otherFile) setSplitFileId(otherFile.id)
       else toast.error('Add another file first')
     }
   }
 
   const runCode = async () => {
+    if (!activeFile || activeFile.type!== 'file') return
     setLoading(true)
     setOutput('Running...')
     try {
@@ -155,7 +242,7 @@ function EditorComponent() {
   const saveCode = async () => {
     if (!user) return toast.error('Login to save')
     await setDoc(doc(db, 'users', user.uid), {
-      files, updatedAt: serverTimestamp()
+      tree, updatedAt: serverTimestamp()
     })
     setLastSaved(new Date().toLocaleTimeString())
     toast.success('Project saved')
@@ -164,7 +251,7 @@ function EditorComponent() {
   const shareCode = async () => {
     if (!user) return toast.error('Login to share')
     const docRef = await addDoc(collection(db, 'snippets'), {
-      files, input, createdAt: serverTimestamp()
+      tree, input, createdAt: serverTimestamp()
     })
     const url = `${window.location.origin}/editor?share=${docRef.id}`
     await navigator.clipboard.writeText(url)
@@ -172,7 +259,7 @@ function EditorComponent() {
   }
 
   const explainCode = async () => {
-    if (!activeFile.content.trim()) return toast.error('Write some code first')
+    if (!activeFile ||!activeFile.content?.trim()) return toast.error('Write some code first')
     setExplaining(true)
     setShowExplain(true)
     setExplanation('Thinking...')
@@ -202,6 +289,38 @@ function EditorComponent() {
     return '📄'
   }
 
+  const renderTree = (nodes: FileNode[], depth = 0) => {
+    return nodes.map(node => (
+      <div key={node.id}>
+        <div 
+          className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer text-sm group ${
+            node.type === 'file' && activeFileId === node.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
+          }`}
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          onClick={() => node.type === 'file'? setActiveFileId(node.id) : toggleFolder(node.id)}
+        >
+          {node.type === 'folder' && (
+            expanded.has(node.id)? <FiChevronDown className="text-xs" /> : <FiChevronRight className="text-xs" />
+          )}
+          {node.type === 'folder'? <FiFolder className="text-blue-400 text-xs" /> : <span className="text-xs">{getFileIcon(node.name)}</span>}
+          <span className="flex-1 truncate">{node.name}</span>
+          <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+            {node.type === 'folder' && (
+              <>
+                <FiFile className="text-xs hover:text-green-400" onClick={(e) => { e.stopPropagation(); addFile(node.id) }} />
+                <FiFolderPlus className="text-xs hover:text-blue-400" onClick={(e) => { e.stopPropagation(); addFolder(node.id) }} />
+              </>
+            )}
+            {node.id!== 'root' && (
+              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteNode(node.id) }} />
+            )}
+          </div>
+        </div>
+        {node.type === 'folder' && expanded.has(node.id) && node.children && renderTree(node.children, depth + 1)}
+      </div>
+    ))
+  }
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-white flex">
       <Toaster position="top-right" />
@@ -209,37 +328,18 @@ function EditorComponent() {
       {sidebarOpen && (
         <div className="w-60 bg-[#161b22] border-r border-gray-700 flex flex-col">
           <div className="p-3 border-b border-gray-700 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <FiFolder className="text-blue-400" />
-              <span className="text-sm font-semibold">EXPLORER</span>
+            <span className="text-sm font-semibold">EXPLORER</span>
+            <div className="flex gap-1">
+              <button onClick={() => addFile()} className="p-1 hover:bg-gray-700 rounded" title="New File">
+                <FiFile className="text-sm" />
+              </button>
+              <button onClick={() => addFolder()} className="p-1 hover:bg-gray-700 rounded" title="New Folder">
+                <FiFolderPlus className="text-sm" />
+              </button>
             </div>
-            <button onClick={addFile} className="p-1 hover:bg-gray-700 rounded">
-              <FiPlus className="text-sm" />
-            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            <div className="flex items-center gap-1 mb-1 text-xs text-gray-400 px-1">
-              <FiChevronDown />
-              <span>ASCET-PROJECT</span>
-            </div>
-            {files.map(file => (
-              <div 
-                key={file.id} 
-                className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm group ${
-                  activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
-                }`}
-                onClick={() => setActiveFileId(file.id)}
-              >
-                <span className="text-xs">{getFileIcon(file.name)}</span>
-                <span className="flex-1 truncate">{file.name}</span>
-                {files.length > 1 && (
-                  <FiX 
-                    className="text-xs opacity-0 group-hover:opacity-100 hover:text-red-400" 
-                    onClick={(e) => { e.stopPropagation(); deleteFile(file.id) }} 
-                  />
-                )}
-              </div>
-            ))}
+          <div className="flex-1 overflow-y-auto p-1">
+            {renderTree(tree)}
           </div>
           {lastSaved && (
             <div className="p-2 border-t border-gray-700 text-xs text-gray-500">
@@ -273,14 +373,14 @@ function EditorComponent() {
         </div>
 
         <div className="flex items-center gap-1 bg-[#161b22] p-1 border-b border-gray-700 overflow-x-auto">
-          {files.map(file => (
+          {allFiles.map(file => (
             <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-t cursor-pointer text-sm ${
               activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
             }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
               <span>{getFileIcon(file.name)}</span>
               <span>{file.name}</span>
-              {files.length > 1 && (
-                <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); closeFile(file.id) }} />
+              {allFiles.length > 1 && (
+                <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteNode(file.id) }} />
               )}
             </div>
           ))}
@@ -288,21 +388,23 @@ function EditorComponent() {
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0">
           <div className={`flex gap-0.5 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
-            <Editor
-              height="100%"
-              language={activeFile.language}
-              value={activeFile.content}
-              onChange={v => updateFile(activeFileId, v || '')}
-              theme="vs-dark"
-              options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-              className={splitFileId? 'w-1/2' : 'w-full'}
-            />
-            {splitFileId && splitFile && (
+            {activeFile && activeFile.type === 'file' && (
+              <Editor
+                height="100%"
+                language={activeFile.language}
+                value={activeFile.content}
+                onChange={v => updateFileContent(activeFileId, v || '')}
+                theme="vs-dark"
+                options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
+                className={splitFileId? 'w-1/2' : 'w-full'}
+              />
+            )}
+            {splitFileId && splitFile && splitFile.type === 'file' && (
               <Editor
                 height="100%"
                 language={splitFile.language}
                 value={splitFile.content}
-                onChange={v => updateFile(splitFileId, v || '')}
+                onChange={v => updateFileContent(splitFileId, v || '')}
                 theme="vs-dark"
                 options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
                 className="w-1/2"
