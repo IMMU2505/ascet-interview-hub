@@ -1,57 +1,43 @@
-'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { auth, provider } from '../lib/firebase';
-import { signInWithPopup, onAuthStateChanged } from 'firebase/auth';
+'use client'
+import { useEffect } from 'react'
+import { auth, provider } from '../lib/firebase'
+import { signInWithPopup } from 'firebase/auth'
+import { useRouter } from 'next/navigation'
+import toast from 'react-hot-toast'
 
 export default function Home() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        router.push('/dashboard');
+        router.push('/dashboard')
       }
-    });
-    return () => unsubscribe();
-  }, [router]);
+    })
+    return () => unsubscribe()
+  }, [router])
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
+  const signInWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, provider);
-      router.push('/dashboard');
-    } catch (err) {
-      console.error(err);
-      alert('Login failed. Check if popups are blocked.');
-      setLoading(false);
+      await signInWithPopup(auth, provider)
+      toast.success('Signed in successfully!')
+    } catch (error: any) {
+      toast.error(error.message)
     }
-  };
+  }
 
   return (
-    <main style={{display:'flex',justifyContent:'center',alignItems:'center',height:'100vh',background:'#f3f4f6'}}>
-      <div style={{background:'white',padding:'40px',borderRadius:'12px',boxShadow:'0 4px 6px rgba(0,0,0,0.1)',textAlign:'center',maxWidth:'400px'}}>
-        <h1 style={{fontSize:'28px',fontWeight:'bold',marginBottom:'8px'}}>ASCET Interview Hub</h1>
-        <p style={{color:'#6b7280',marginBottom:'24px'}}>Sign in with your college Google account</p>
-        <button 
-          onClick={handleGoogleLogin} 
-          disabled={loading} 
-          style={{
-            background:'#4285F4',
-            color:'white',
-            border:'none',
-            padding:'12px 24px',
-            borderRadius:'8px',
-            fontSize:'16px',
-            cursor: loading? 'not-allowed' : 'pointer',
-            width:'100%',
-            opacity: loading? 0.7 : 1
-          }}
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="bg-white p-8 rounded-xl shadow-lg text-center">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">ASCET Interview Hub</h1>
+        <p className="text-gray-600 mb-8">College Interview & Aptitude Platform</p>
+        <button
+          onClick={signInWithGoogle}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
         >
-          {loading? 'Signing in...' : 'Sign in with Google'}
+          Sign in with Google
         </button>
       </div>
-    </main>
-  );
+    </div>
+  )
 }
