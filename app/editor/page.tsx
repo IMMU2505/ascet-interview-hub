@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 function EditorComponent() {
   const [user, setUser] = useState<any>(null)
-  const [code, setCode] = useState('print("Hello ASCET")')
+  const [code, setCode] = useState('a = 10\nprint(a)')
   const [language, setLanguage] = useState('python')
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
@@ -46,19 +46,27 @@ function EditorComponent() {
       })
     }
     loadCode()
-  }, [shareId])
+  }, [shareId, router, code, language])
 
   const runCode = async () => {
     setLoading(true)
     setOutput('Running...')
     try {
-      const res = await fetch('/api/execute', {
+      const res = await fetch('/api/run-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language, input })
+        body: JSON.stringify({
+          code,
+          language,
+          stdin: input
+        })
       })
       const data = await res.json()
-      setOutput(data.output || data.error || 'No output')
+      if (data.error) {
+        setOutput(data.error)
+      } else {
+        setOutput(data.output || 'No output')
+      }
     } catch {
       setOutput('Error running code')
     }
@@ -85,21 +93,39 @@ function EditorComponent() {
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-4">
-      <Toaster />
+      <Toaster position="top-right" />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">ASCET Editor</h1>
         <div className="flex gap-2">
-          <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-[#161b22] px-3 py-2 rounded">
+          <select
+            value={language}
+            onChange={e => setLanguage(e.target.value)}
+            className="bg-[#161b22] px-3 py-2 rounded border border-gray-700"
+          >
             <option value="python">Python</option>
             <option value="javascript">JavaScript</option>
             <option value="java">Java</option>
             <option value="cpp">C++</option>
           </select>
-          <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
+          <button
+            onClick={runCode}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+          >
             {loading? 'Running...' : 'Run'}
           </button>
-          <button onClick={saveCode} className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700">Save</button>
-          <button onClick={shareCode} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Share</button>
+          <button
+            onClick={saveCode}
+            className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700"
+          >
+            Save
+          </button>
+          <button
+            onClick={shareCode}
+            className="px-4 py-2 bg-green-600 rounded hover:bg-green-700"
+          >
+            Share
+          </button>
         </div>
       </div>
 
@@ -110,21 +136,27 @@ function EditorComponent() {
           value={code}
           onChange={v => setCode(v || '')}
           theme="vs-dark"
-          options={{ fontSize: 14, minimap: { enabled: false } }}
+          options={{
+            fontSize: 14,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false
+          }}
         />
         <div className="flex flex-col gap-4">
           <div>
-            <p className="text-sm mb-1">Input (stdin):</p>
+            <p className="text-sm mb-1 text-gray-400">Input (stdin):</p>
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="Input here..."
-              className="w-full h-32 bg-[#161b22] p-3 rounded font-mono text-sm resize-none"
+              className="w-full h-32 bg-[#161b22] p-3 rounded border border-gray-700 font-mono text-sm resize-none focus:outline-none focus:border-blue-500"
             />
           </div>
-          <div>
-            <p className="text-sm mb-1">Output:</p>
-            <pre className="w-full h-64 bg-black p-3 rounded overflow-auto text-green-400 font-mono text-sm">{output}</pre>
+          <div className="flex-1">
+            <p className="text-sm mb-1 text-gray-400">Output:</p>
+            <pre className="w-full h-full min-h-[200px] bg-black p-3 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-sm">
+              {output}
+            </pre>
           </div>
         </div>
       </div>
@@ -134,7 +166,7 @@ function EditorComponent() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="bg-[#0d1117] text-white p-4">Loading...</div>}>
+    <Suspense fallback={<div className="bg-[#0d1117] text-white p-4">Loading Editor...</div>}>
       <EditorComponent />
     </Suspense>
   )
