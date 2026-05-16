@@ -247,6 +247,7 @@ export default function EditorPage() {
               <FolderPlus size={16} />
             </button>
           </div>
+        </div>
         <div className="flex-1 overflow-auto p-2">{renderTree()}</div>
       </div>
 
