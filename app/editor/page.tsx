@@ -4,7 +4,7 @@ import { useAuthState } from 'react-firebase-hooks/auth'
 import { auth } from '@/lib/firebase'
 import { useRouter } from 'next/navigation'
 import Editor from '@monaco-editor/react'
-import { Files, FolderOpen, Folder, FilePlus, FolderPlus, Play, X, ChevronRight, ChevronDown, Download, Edit3, Save, Sparkles } from 'lucide-react'
+import { Files, FolderOpen, Folder, FilePlus, FolderPlus, Play, X, ChevronRight, ChevronDown, Download, Edit3, Save, Sparkles, Trophy } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface FileItem {
@@ -247,7 +247,6 @@ export default function EditorPage() {
               <FolderPlus size={16} />
             </button>
           </div>
-        </div>
         <div className="flex-1 overflow-auto p-2">{renderTree()}</div>
       </div>
 
@@ -258,6 +257,12 @@ export default function EditorPage() {
             {activeFile &&!saved && <Save size={14} className="text-yellow-400" />}
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={() => router.push('/aptitude')}
+              className="flex items-center gap-1 px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-sm"
+            >
+              <Trophy size={14} /> Aptitude
+            </button>
             <button
               onClick={explainCode}
               disabled={!activeFile || explaining}
