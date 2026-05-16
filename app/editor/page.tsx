@@ -37,7 +37,7 @@ export default function EditorPage() {
     if (user) {
       loadSnippets()
       loadProblems()
-      loadProblem('two-sum') // auto-load first problem
+      loadProblem('two-sum')
     }
   }, [user, loading, router])
 
@@ -133,8 +133,8 @@ export default function EditorPage() {
 
   const handleLanguageChange = (lang: string) => {
     setLanguage(lang)
-    if (problem?.starterCode[lang]) {
-      setCode(problem.starterCode[lang])
+    if (problem?.starterCode) {
+      setCode(problem.starterCode[lang] || '')
     }
   }
 
