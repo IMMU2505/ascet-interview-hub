@@ -29,6 +29,7 @@ function EditorComponent() {
   const [explanation, setExplanation] = useState('')
   const [showExplain, setShowExplain] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [lastSaved, setLastSaved] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
@@ -68,6 +69,24 @@ function EditorComponent() {
     }
     loadCode()
   }, [shareId, router])
+
+  // Auto-save every 3 seconds after you stop typing
+  useEffect(() => {
+    if (!user || shareId) return
+    
+    const timer = setTimeout(async () => {
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          files, updatedAt: serverTimestamp()
+        })
+        setLastSaved(new Date().toLocaleTimeString())
+      } catch (e) {
+        console.log('Auto-save failed')
+      }
+    }, 3000)
+
+    return () => clearTimeout(timer)
+  }, [files, user, shareId])
 
   const updateFile = (id: string, content: string) => {
     setFiles(files.map(f => f.id === id? {...f, content } : f))
@@ -138,6 +157,7 @@ function EditorComponent() {
     await setDoc(doc(db, 'users', user.uid), {
       files, updatedAt: serverTimestamp()
     })
+    setLastSaved(new Date().toLocaleTimeString())
     toast.success('Project saved')
   }
 
@@ -221,6 +241,11 @@ function EditorComponent() {
               </div>
             ))}
           </div>
+          {lastSaved && (
+            <div className="p-2 border-t border-gray-700 text-xs text-gray-500">
+              Saved {lastSaved}
+            </div>
+          )}
         </div>
       )}
 
