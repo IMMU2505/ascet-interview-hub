@@ -362,7 +362,7 @@ function EditorComponent() {
   )
 }
 
-export default function Page() {
+export default function Page(){
   return (
     <Suspense fallback={<div className="bg-[#0d1117] text-white p-4">Loading Editor...</div>}>
       <EditorComponent />
