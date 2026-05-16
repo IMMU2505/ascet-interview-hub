@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Editor from '@monaco-editor/react'
 import { auth, db } from '../../lib/firebase'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -7,10 +7,10 @@ import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'fireba
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function EditorPage() {
+function EditorComponent() {
   const [user, setUser] = useState<any>(null)
-  const [code, setCode] = useState('// Write your code here')
-  const [language, setLanguage] = useState('javascript')
+  const [code, setCode] = useState('print("Hello ASCET")')
+  const [language, setLanguage] = useState('python')
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,7 +20,6 @@ export default function EditorPage() {
 
   useEffect(() => {
     const loadCode = async () => {
-      // If share link, load that snippet
       if (shareId) {
         const snap = await getDoc(doc(db, 'snippets', shareId))
         if (snap.exists()) {
@@ -35,8 +34,7 @@ export default function EditorPage() {
         return
       }
 
-      // Otherwise load user's own saved code
-      const unsub = onAuthStateChanged(auth, async (currentUser) => {
+      onAuthStateChanged(auth, async (currentUser) => {
         if (!currentUser) return router.push('/login')
         setUser(currentUser)
         const snap = await getDoc(doc(db, 'users', currentUser.uid))
@@ -46,7 +44,6 @@ export default function EditorPage() {
           setLanguage(data.language || language)
         }
       })
-      return () => unsub()
     }
     loadCode()
   }, [shareId])
@@ -77,6 +74,7 @@ export default function EditorPage() {
   }
 
   const shareCode = async () => {
+    if (!user) return toast.error('Login to share')
     const docRef = await addDoc(collection(db, 'snippets'), {
       code, language, input, createdAt: serverTimestamp()
     })
@@ -89,23 +87,23 @@ export default function EditorPage() {
     <div className="min-h-screen bg-[#0d1117] text-white p-4">
       <Toaster />
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">ASCET Code Runner</h1>
+        <h1 className="text-2xl font-bold">ASCET Editor</h1>
         <div className="flex gap-2">
           <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-[#161b22] px-3 py-2 rounded">
-            <option value="javascript">JavaScript</option>
             <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
             <option value="java">Java</option>
             <option value="cpp">C++</option>
           </select>
-          <button onClick={saveCode} className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700">Save</button>
-          <button onClick={shareCode} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700">Share</button>
-          <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">
+          <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
             {loading? 'Running...' : 'Run'}
           </button>
+          <button onClick={saveCode} className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700">Save</button>
+          <button onClick={shareCode} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Share</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 h-[calc(100vh-100px)]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-100px)]">
         <Editor
           height="100%"
           language={language}
@@ -115,15 +113,29 @@ export default function EditorPage() {
           options={{ fontSize: 14, minimap: { enabled: false } }}
         />
         <div className="flex flex-col gap-4">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Input for stdin..."
-            className="h-1/2 bg-[#161b22] p-3 rounded font-mono text-sm resize-none"
-          />
-          <pre className="h-1/2 bg-black p-3 rounded overflow-auto text-green-400 font-mono text-sm">{output}</pre>
+          <div>
+            <p className="text-sm mb-1">Input (stdin):</p>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Input here..."
+              className="w-full h-32 bg-[#161b22] p-3 rounded font-mono text-sm resize-none"
+            />
+          </div>
+          <div>
+            <p className="text-sm mb-1">Output:</p>
+            <pre className="w-full h-64 bg-black p-3 rounded overflow-auto text-green-400 font-mono text-sm">{output}</pre>
+          </div>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="bg-[#0d1117] text-white p-4">Loading...</div>}>
+      <EditorComponent />
+    </Suspense>
   )
 }
