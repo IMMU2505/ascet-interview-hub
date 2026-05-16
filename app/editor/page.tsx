@@ -81,7 +81,7 @@ function EditorComponent() {
       id: Date.now().toString(),
       name,
       content: '',
-      language: langMap[ext] || 'python'
+      language: langMap[ext || ''] || 'python'
     }
     setFiles([...files, newFile])
     setActiveFileId(newFile.id)
