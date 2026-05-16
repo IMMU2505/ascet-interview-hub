@@ -221,6 +221,7 @@ export default function EditorPage() {
               <X size={12} />
             </button>
           </div>
+        </div>
         {item.type === 'folder' && expanded.has(item.path) && (
           <div className="ml-4">{renderTree(item.path)}</div>
         )}
