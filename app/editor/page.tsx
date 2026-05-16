@@ -6,7 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FiPlus, FiX, FiColumns } from 'react-icons/fi'
+import { FiPlus, FiX, FiColumns, FiFile, FiFolder, FiChevronDown, FiChevronRight } from 'react-icons/fi'
 
 type FileTab = {
   id: string
@@ -28,6 +28,7 @@ function EditorComponent() {
   const [explaining, setExplaining] = useState(false)
   const [explanation, setExplanation] = useState('')
   const [showExplain, setShowExplain] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
@@ -76,7 +77,7 @@ function EditorComponent() {
     const name = prompt('File name? (e.g. utils.py, main.js)')
     if (!name) return
     const ext = name.split('.').pop()
-    const langMap: any = { py: 'python', js: 'javascript', java: 'java', cpp: 'cpp', c: 'cpp' }
+    const langMap: any = { py: 'python', js: 'javascript', java: 'java', cpp: 'cpp', c: 'cpp', ts: 'typescript', html: 'html', css: 'css' }
     const newFile: FileTab = {
       id: Date.now().toString(),
       name,
@@ -93,6 +94,12 @@ function EditorComponent() {
     setFiles(newFiles)
     if (activeFileId === id) setActiveFileId(newFiles[0].id)
     if (splitFileId === id) setSplitFileId(null)
+  }
+
+  const deleteFile = (id: string) => {
+    if (files.length === 1) return toast.error('Cannot delete last file')
+    if (!confirm('Delete this file?')) return
+    closeFile(id)
   }
 
   const toggleSplit = () => {
@@ -163,92 +170,148 @@ function EditorComponent() {
     setExplaining(false)
   }
 
+  const getFileIcon = (name: string) => {
+    const ext = name.split('.').pop()
+    if (ext === 'py') return '🐍'
+    if (ext === 'js') return '📜'
+    if (ext === 'ts') return '📘'
+    if (ext === 'java') return '☕'
+    if (ext === 'cpp' || ext === 'c') return '⚙️'
+    if (ext === 'html') return '🌐'
+    if (ext === 'css') return '🎨'
+    return '📄'
+  }
+
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white p-4">
+    <div className="min-h-screen bg-[#0d1117] text-white flex">
       <Toaster position="top-right" />
-      <div className="flex justify-between items-center mb-2">
-        <h1 className="text-2xl font-bold">ASCET Editor</h1>
-        <div className="flex gap-2">
-          <button onClick={toggleSplit} className={`px-3 py-2 rounded ${splitFileId? 'bg-blue-600' : 'bg-gray-600'} hover:opacity-80`}>
-            <FiColumns />
-          </button>
-          <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
-            {loading? 'Running...' : 'Run'}
-          </button>
-          <button onClick={explainCode} disabled={explaining} className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50">
-            {explaining? 'Explaining...' : 'Explain'}
-          </button>
-          <button onClick={saveCode} className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700">Save</button>
-          <button onClick={shareCode} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Share</button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 mb-2 bg-[#161b22] p-1 rounded-t border border-gray-700">
-        {files.map(file => (
-          <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer ${
-            activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
-          }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
-            <span className="text-sm">{file.name}</span>
-            {files.length > 1 && (
-              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); closeFile(file.id) }} />
-            )}
+      
+      {sidebarOpen && (
+        <div className="w-60 bg-[#161b22] border-r border-gray-700 flex flex-col">
+          <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <FiFolder className="text-blue-400" />
+              <span className="text-sm font-semibold">EXPLORER</span>
+            </div>
+            <button onClick={addFile} className="p-1 hover:bg-gray-700 rounded">
+              <FiPlus className="text-sm" />
+            </button>
           </div>
-        ))}
-        <button onClick={addFile} className="p-1.5 hover:bg-[#0d1117] rounded text-gray-400">
-          <FiPlus />
-        </button>
-      </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex items-center gap-1 mb-1 text-xs text-gray-400 px-1">
+              <FiChevronDown />
+              <span>ASCET-PROJECT</span>
+            </div>
+            {files.map(file => (
+              <div 
+                key={file.id} 
+                className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm group ${
+                  activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
+                }`}
+                onClick={() => setActiveFileId(file.id)}
+              >
+                <span className="text-xs">{getFileIcon(file.name)}</span>
+                <span className="flex-1 truncate">{file.name}</span>
+                {files.length > 1 && (
+                  <FiX 
+                    className="text-xs opacity-0 group-hover:opacity-100 hover:text-red-400" 
+                    onClick={(e) => { e.stopPropagation(); deleteFile(file.id) }} 
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-140px)]">
-        <div className={`flex gap-2 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
-          <Editor
-            height="100%"
-            language={activeFile.language}
-            value={activeFile.content}
-            onChange={v => updateFile(activeFileId, v || '')}
-            theme="vs-dark"
-            options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-            className={splitFileId? 'w-1/2' : 'w-full'}
-          />
-          {splitFileId && splitFile && (
+      <div className="flex-1 flex flex-col">
+        <div className="flex justify-between items-center p-2 border-b border-gray-700 bg-[#161b22]">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-gray-700 rounded">
+              <FiFolder />
+            </button>
+            <h1 className="text-lg font-bold">ASCET Editor</h1>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={toggleSplit} className={`px-3 py-1.5 rounded text-sm ${splitFileId? 'bg-blue-600' : 'bg-gray-600'} hover:opacity-80`}>
+              <FiColumns />
+            </button>
+            <button onClick={runCode} disabled={loading} className="px-3 py-1.5 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 text-sm">
+              {loading? 'Running...' : 'Run'}
+            </button>
+            <button onClick={explainCode} disabled={explaining} className="px-3 py-1.5 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 text-sm">
+              {explaining? '...' : 'Explain'}
+            </button>
+            <button onClick={saveCode} className="px-3 py-1.5 bg-gray-600 rounded hover:bg-gray-700 text-sm">Save</button>
+            <button onClick={shareCode} className="px-3 py-1.5 bg-green-600 rounded hover:bg-green-700 text-sm">Share</button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 bg-[#161b22] p-1 border-b border-gray-700 overflow-x-auto">
+          {files.map(file => (
+            <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-t cursor-pointer text-sm ${
+              activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
+            }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
+              <span>{getFileIcon(file.name)}</span>
+              <span>{file.name}</span>
+              {files.length > 1 && (
+                <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); closeFile(file.id) }} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0">
+          <div className={`flex gap-0.5 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
             <Editor
               height="100%"
-              language={splitFile.language}
-              value={splitFile.content}
-              onChange={v => updateFile(splitFileId, v || '')}
+              language={activeFile.language}
+              value={activeFile.content}
+              onChange={v => updateFile(activeFileId, v || '')}
               theme="vs-dark"
               options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-              className="w-1/2"
+              className={splitFileId? 'w-1/2' : 'w-full'}
             />
-          )}
-        </div>
-        <div className={`flex flex-col gap-4 ${splitFileId? 'col-span-2' : ''}`}>
-          <div>
-            <p className="text-sm mb-1 text-gray-400">Input (stdin):</p>
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Input here..."
-              className="w-full h-24 bg-[#161b22] p-3 rounded border border-gray-700 font-mono text-sm resize-none focus:outline-none focus:border-blue-500"
-            />
+            {splitFileId && splitFile && (
+              <Editor
+                height="100%"
+                language={splitFile.language}
+                value={splitFile.content}
+                onChange={v => updateFile(splitFileId, v || '')}
+                theme="vs-dark"
+                options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
+                className="w-1/2"
+              />
+            )}
           </div>
-          <div>
-            <p className="text-sm mb-1 text-gray-400">Output:</p>
-            <pre className="w-full h-32 bg-black p-3 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-sm">
-              {output}
-            </pre>
-          </div>
-          {showExplain && (
-            <div className="flex-1 flex flex-col">
-              <div className="flex justify-between items-center mb-1">
-                <p className="text-sm text-purple-400">AI Explanation:</p>
-                <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
-              </div>
-              <div className="w-full flex-1 bg-[#161b22] p-3 rounded border border-purple-700 overflow-auto text-gray-200 text-sm whitespace-pre-wrap">
-                {explanation}
-              </div>
+          <div className={`flex flex-col gap-2 p-2 bg-[#0d1117] ${splitFileId? 'col-span-2' : ''}`}>
+            <div>
+              <p className="text-xs mb-1 text-gray-400">Input (stdin):</p>
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="Input here..."
+                className="w-full h-20 bg-[#161b22] p-2 rounded border border-gray-700 font-mono text-xs resize-none focus:outline-none focus:border-blue-500"
+              />
             </div>
-          )}
+            <div>
+              <p className="text-xs mb-1 text-gray-400">Output:</p>
+              <pre className="w-full h-28 bg-black p-2 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-xs">
+                {output}
+              </pre>
+            </div>
+            {showExplain && (
+              <div className="flex-1 flex flex-col">
+                <div className="flex justify-between items-center mb-1">
+                  <p className="text-xs text-purple-400">AI Explanation:</p>
+                  <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
+                </div>
+                <div className="w-full flex-1 bg-[#161b22] p-2 rounded border border-purple-700 overflow-auto text-gray-200 text-xs whitespace-pre-wrap">
+                  {explanation}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
