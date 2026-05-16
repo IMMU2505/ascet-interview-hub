@@ -6,11 +6,21 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { FiPlus, FiX } from 'react-icons/fi'
+
+type FileTab = {
+  id: string
+  name: string
+  content: string
+  language: string
+}
 
 function EditorComponent() {
   const [user, setUser] = useState<any>(null)
-  const [code, setCode] = useState('a = 10\nprint(a)')
-  const [language, setLanguage] = useState('python')
+  const [files, setFiles] = useState<FileTab[]>([
+    { id: '1', name: 'main.py', content: 'a = 10\nprint(a)', language: 'python' }
+  ])
+  const [activeFileId, setActiveFileId] = useState('1')
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,16 +31,22 @@ function EditorComponent() {
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
 
+  const activeFile = files.find(f => f.id === activeFileId) || files[0]
+
   useEffect(() => {
     const loadCode = async () => {
       if (shareId) {
         const snap = await getDoc(doc(db, 'snippets', shareId))
         if (snap.exists()) {
           const data = snap.data()
-          setCode(data.code)
-          setLanguage(data.language)
+          if (data.files) {
+            setFiles(data.files)
+            setActiveFileId(data.files[0].id)
+          } else {
+            setFiles([{ id: '1', name: 'main.py', content: data.code, language: data.language }])
+          }
           setInput(data.input || '')
-          toast.success('Loaded shared code')
+          toast.success('Loaded shared project')
         } else {
           toast.error('Share link not found')
         }
@@ -43,13 +59,38 @@ function EditorComponent() {
         const snap = await getDoc(doc(db, 'users', currentUser.uid))
         if (snap.exists()) {
           const data = snap.data()
-          setCode(data.code || code)
-          setLanguage(data.language || language)
+          if (data.files) setFiles(data.files)
         }
       })
     }
     loadCode()
-  }, [shareId, router, code, language])
+  }, [shareId, router])
+
+  const updateActiveFile = (content: string) => {
+    setFiles(files.map(f => f.id === activeFileId? {...f, content } : f))
+  }
+
+  const addFile = () => {
+    const name = prompt('File name? (e.g. utils.py, main.js)')
+    if (!name) return
+    const ext = name.split('.').pop()
+    const langMap: any = { py: 'python', js: 'javascript', java: 'java', cpp: 'cpp', c: 'cpp' }
+    const newFile: FileTab = {
+      id: Date.now().toString(),
+      name,
+      content: '',
+      language: langMap[ext] || 'python'
+    }
+    setFiles([...files, newFile])
+    setActiveFileId(newFile.id)
+  }
+
+  const closeFile = (id: string) => {
+    if (files.length === 1) return toast.error('Cannot close last file')
+    const newFiles = files.filter(f => f.id!== id)
+    setFiles(newFiles)
+    if (activeFileId === id) setActiveFileId(newFiles[0].id)
+  }
 
   const runCode = async () => {
     setLoading(true)
@@ -58,7 +99,11 @@ function EditorComponent() {
       const res = await fetch('/api/run-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language, stdin: input })
+        body: JSON.stringify({
+          code: activeFile.content,
+          language: activeFile.language,
+          stdin: input
+        })
       })
       const data = await res.json()
       setOutput(data.error || data.output || 'No output')
@@ -71,15 +116,15 @@ function EditorComponent() {
   const saveCode = async () => {
     if (!user) return toast.error('Login to save')
     await setDoc(doc(db, 'users', user.uid), {
-      code, language, updatedAt: serverTimestamp()
+      files, updatedAt: serverTimestamp()
     })
-    toast.success('Saved to your account')
+    toast.success('Project saved')
   }
 
   const shareCode = async () => {
     if (!user) return toast.error('Login to share')
     const docRef = await addDoc(collection(db, 'snippets'), {
-      code, language, input, createdAt: serverTimestamp()
+      files, input, createdAt: serverTimestamp()
     })
     const url = `${window.location.origin}/editor?share=${docRef.id}`
     await navigator.clipboard.writeText(url)
@@ -87,7 +132,7 @@ function EditorComponent() {
   }
 
   const explainCode = async () => {
-    if (!code.trim()) return toast.error('Write some code first')
+    if (!activeFile.content.trim()) return toast.error('Write some code first')
     setExplaining(true)
     setShowExplain(true)
     setExplanation('Thinking...')
@@ -95,7 +140,7 @@ function EditorComponent() {
       const res = await fetch('/api/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language })
+        body: JSON.stringify({ code: activeFile.content, language: activeFile.language })
       })
       const data = await res.json()
       setExplanation(data.explanation || data.error || 'Could not explain')
@@ -108,54 +153,42 @@ function EditorComponent() {
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-4">
       <Toaster position="top-right" />
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl font-bold">ASCET Editor</h1>
         <div className="flex gap-2">
-          <select
-            value={language}
-            onChange={e => setLanguage(e.target.value)}
-            className="bg-[#161b22] px-3 py-2 rounded border border-gray-700"
-          >
-            <option value="python">Python</option>
-            <option value="javascript">JavaScript</option>
-            <option value="java">Java</option>
-            <option value="cpp">C++</option>
-          </select>
-          <button
-            onClick={runCode}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
             {loading? 'Running...' : 'Run'}
           </button>
-          <button
-            onClick={explainCode}
-            disabled={explaining}
-            className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50"
-          >
+          <button onClick={explainCode} disabled={explaining} className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50">
             {explaining? 'Explaining...' : 'Explain'}
           </button>
-          <button
-            onClick={saveCode}
-            className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700"
-          >
-            Save
-          </button>
-          <button
-            onClick={shareCode}
-            className="px-4 py-2 bg-green-600 rounded hover:bg-green-700"
-          >
-            Share
-          </button>
+          <button onClick={saveCode} className="px-4 py-2 bg-gray-600 rounded hover:bg-gray-700">Save</button>
+          <button onClick={shareCode} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Share</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-100px)]">
+      <div className="flex items-center gap-1 mb-2 bg-[#161b22] p-1 rounded-t border border-gray-700">
+        {files.map(file => (
+          <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer ${
+            activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
+          }`} onClick={() => setActiveFileId(file.id)}>
+            <span className="text-sm">{file.name}</span>
+            {files.length > 1 && (
+              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); closeFile(file.id) }} />
+            )}
+          </div>
+        ))}
+        <button onClick={addFile} className="p-1.5 hover:bg-[#0d1117] rounded text-gray-400">
+          <FiPlus />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-140px)]">
         <Editor
           height="100%"
-          language={language}
-          value={code}
-          onChange={v => setCode(v || '')}
+          language={activeFile.language}
+          value={activeFile.content}
+          onChange={v => updateActiveFile(v || '')}
           theme="vs-dark"
           options={{
             fontSize: 14,
@@ -180,7 +213,7 @@ function EditorComponent() {
             </pre>
           </div>
           {showExplain && (
-            <div>
+            <div className="flex-1 flex flex-col">
               <div className="flex justify-between items-center mb-1">
                 <p className="text-sm text-purple-400">AI Explanation:</p>
                 <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
