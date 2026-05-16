@@ -14,6 +14,9 @@ function EditorComponent() {
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [explaining, setExplaining] = useState(false)
+  const [explanation, setExplanation] = useState('')
+  const [showExplain, setShowExplain] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
@@ -55,18 +58,10 @@ function EditorComponent() {
       const res = await fetch('/api/run-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          language,
-          stdin: input
-        })
+        body: JSON.stringify({ code, language, stdin: input })
       })
       const data = await res.json()
-      if (data.error) {
-        setOutput(data.error)
-      } else {
-        setOutput(data.output || 'No output')
-      }
+      setOutput(data.error || data.output || 'No output')
     } catch {
       setOutput('Error running code')
     }
@@ -91,6 +86,25 @@ function EditorComponent() {
     toast.success('Share link copied!')
   }
 
+  const explainCode = async () => {
+    if (!code.trim()) return toast.error('Write some code first')
+    setExplaining(true)
+    setShowExplain(true)
+    setExplanation('Thinking...')
+    try {
+      const res = await fetch('/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, language })
+      })
+      const data = await res.json()
+      setExplanation(data.explanation || data.error || 'Could not explain')
+    } catch {
+      setExplanation('Error getting explanation')
+    }
+    setExplaining(false)
+  }
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-4">
       <Toaster position="top-right" />
@@ -113,6 +127,13 @@ function EditorComponent() {
             className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
           >
             {loading? 'Running...' : 'Run'}
+          </button>
+          <button
+            onClick={explainCode}
+            disabled={explaining}
+            className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50"
+          >
+            {explaining? 'Explaining...' : 'Explain'}
           </button>
           <button
             onClick={saveCode}
@@ -149,15 +170,26 @@ function EditorComponent() {
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="Input here..."
-              className="w-full h-32 bg-[#161b22] p-3 rounded border border-gray-700 font-mono text-sm resize-none focus:outline-none focus:border-blue-500"
+              className="w-full h-24 bg-[#161b22] p-3 rounded border border-gray-700 font-mono text-sm resize-none focus:outline-none focus:border-blue-500"
             />
           </div>
-          <div className="flex-1">
+          <div>
             <p className="text-sm mb-1 text-gray-400">Output:</p>
-            <pre className="w-full h-full min-h-[200px] bg-black p-3 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-sm">
+            <pre className="w-full h-32 bg-black p-3 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-sm">
               {output}
             </pre>
           </div>
+          {showExplain && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <p className="text-sm text-purple-400">AI Explanation:</p>
+                <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
+              </div>
+              <div className="w-full flex-1 bg-[#161b22] p-3 rounded border border-purple-700 overflow-auto text-gray-200 text-sm whitespace-pre-wrap">
+                {explanation}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
