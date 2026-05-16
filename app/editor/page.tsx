@@ -50,7 +50,7 @@ export default function EditorPage() {
         name: 'main.py',
         type: 'file' as const,
         path: '/main.py',
-        content: 'a = 10\nprint(a)'
+        content: 'name = input()\nprint(f"Hello {name}")'
       }
       setItems([defaultFile])
       setActiveFileId('1')
@@ -135,15 +135,23 @@ export default function EditorPage() {
     setRunning(true)
     setOutput('Running...')
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch('/api/run-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: file.content, language: file.name.split('.').pop(), stdin })
+        body: JSON.stringify({
+          code: file.content,
+          language: file.name.split('.').pop(),
+          stdin
+        })
       })
       const data = await res.json()
-      setOutput(data.output || 'No output')
+      if (data.error) {
+        setOutput(`Error: ${data.error}`)
+      } else {
+        setOutput(data.output || 'No output')
+      }
     } catch {
-      setOutput('Error: /api/run not implemented yet. Using simulation.\n\n[Simulated Output]\nHello from ASCET Interview Hub')
+      setOutput('Error: Could not connect to /api/run-code')
     } finally {
       setRunning(false)
     }
@@ -159,16 +167,19 @@ export default function EditorPage() {
     setExplaining(true)
     setAiExplanation('AI is analyzing your code...')
 
+    const language = file.name.split('.').pop() || 'python'
+
     try {
       const res = await fetch('/api/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: file.content, filename: file.name })
+        body: JSON.stringify({ code: file.content, language })
       })
       const data = await res.json()
+      if (data.error) throw new Error(data.error)
       setAiExplanation(data.explanation)
     } catch (err) {
-      setAiExplanation('Error: Could not get AI explanation. Check GROQ_API_KEY.')
+      setAiExplanation('Error: Could not get AI explanation. Check GROQ_API_KEY in Vercel.')
       toast.error('AI explain failed')
     } finally {
       setExplaining(false)
@@ -210,7 +221,6 @@ export default function EditorPage() {
               <X size={12} />
             </button>
           </div>
-        </div>
         {item.type === 'folder' && expanded.has(item.path) && (
           <div className="ml-4">{renderTree(item.path)}</div>
         )}
