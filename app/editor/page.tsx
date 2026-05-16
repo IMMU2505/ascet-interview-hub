@@ -9,117 +9,77 @@ import Link from 'next/link'
 export default function EditorPage() {
   const [user, loading] = useAuthState(auth)
   const router = useRouter()
-  const [code, setCode] = useState(`<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      padding: 40px;
-      background: #f8fafc;
+  
+  const [code, setCode] = useState(`public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello from ASCET Hub!");
     }
-   .container {
-      max-width: 600px;
-      margin: 0 auto;
-      background: white;
-      padding: 32px;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    h1 {
-      color: #3b82f6;
-      margin-bottom: 16px;
-    }
-    button {
-      background: #3b82f6;
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    button:hover {
-      background: #2563eb;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>ASCET Interview Hub</h1>
-    <p>Welcome to the live code editor! Edit this HTML/CSS/JS and see changes instantly.</p>
-    <button onclick="alert('It works!')">Click Me</button>
-  </div>
-
-  <script>
-    console.log('Editor ready! Start coding.');
-  </script>
-</body>
-</html>`)
+}`)
+  const [language, setLanguage] = useState('java')
+  const [output, setOutput] = useState('Click Run Code to see output')
+  const [isRunning, setIsRunning] = useState(false)
 
   useEffect(() => {
-    if (!loading &&!user) router.push('/')
+    if (!loading && !user) router.push('/')
   }, [user, loading, router])
 
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-xl">Loading...</div>
-      </div>
-    )
+  const runCode = async () => {
+    setIsRunning(true)
+    setOutput('Running...')
+    
+    const res = await fetch('/api/run-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language, code })
+    })
+    
+    const data = await res.json()
+    setOutput(data.error || data.output || 'No output')
+    setIsRunning(false)
   }
 
+  if (loading) return <div className="p-4">Loading...</div>
   if (!user) return null
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Header */}
-      <div className="bg-white shadow-md px-4 md:px-6 py-3 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-blue-500 hover:text-blue-700 font-semibold">
-            ← Dashboard
-          </Link>
-          <h1 className="text-lg md:text-xl font-bold">Live Code Editor</h1>
-        </div>
-        <div className="flex gap-3 items-center">
-          <span className="text-sm text-gray-600 hidden md:block">{user.email}</span>
-          <button
-            onClick={() => auth.signOut()}
-            className="bg-red-500 hover:bg-red-600 text-white px-3 md:px-4 py-2 rounded text-sm"
-          >
-            Logout
-          </button>
-        </div>
+    <div className="p-4 bg-gray-950 min-h-screen text-white">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">ASCET Code Runner</h1>
+        <Link href="/dashboard" className="text-blue-400">Dashboard</Link>
       </div>
-
-      {/* Editor + Preview */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
-        {/* Code Editor */}
-        <div className="border-r border-gray-300 min-h-[300px] lg:min-h-0">
-          <Editor
-            height="100%"
-            defaultLanguage="html"
-            theme="vs-dark"
-            value={code}
-            onChange={(value) => setCode(value || '')}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              wordWrap: 'on',
-              scrollBeyondLastLine: false,
-            }}
-          />
-        </div>
-
-        {/* Live Preview */}
-        <div className="bg-white min-h-[300px] lg:min-h-0">
-          <iframe
-            srcDoc={code}
-            title="preview"
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-          />
-        </div>
+      
+      <div className="flex gap-2 mb-2">
+        <select 
+          value={language} 
+          onChange={(e) => setLanguage(e.target.value)}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-700"
+        >
+          <option value="java">Java</option>
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+          <option value="cpp">C++</option>
+        </select>
+        <button 
+          onClick={runCode} 
+          disabled={isRunning}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {isRunning? 'Running...' : 'Run Code'}
+        </button>
+      </div>
+      
+      <Editor
+        height="50vh"
+        language={language === 'cpp' ? 'cpp' : language}
+        value={code}
+        onChange={(value) => setCode(value || '')}
+        theme="vs-dark"
+        options={{ fontSize: 14, minimap: { enabled: false } }}
+      />
+      
+      <div className="bg-black text-green-400 p-4 font-mono mt-2 h-40 overflow-auto rounded border border-gray-700">
+        <div className="text-gray-500 text-xs mb-2">Output:</div>
+        <pre>{output}</pre>
       </div>
     </div>
   )
