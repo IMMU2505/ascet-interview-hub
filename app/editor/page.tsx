@@ -10,17 +10,23 @@ export default function EditorPage() {
   const [user, loading] = useAuthState(auth)
   const router = useRouter()
   
-  const [code, setCode] = useState(`public class Main {
+  const [code, setCode] = useState(`import java.util.Scanner;
+
+public class Main {
     public static void main(String[] args) {
-        System.out.println("Hello from ASCET Hub!");
+        Scanner sc = new Scanner(System.in);
+        System.out.print("Enter name: ");
+        String name = sc.nextLine();
+        System.out.println("Hello " + name);
     }
 }`)
   const [language, setLanguage] = useState('java')
+  const [userInput, setUserInput] = useState('ASCET') // New
   const [output, setOutput] = useState('Click Run Code to see output')
   const [isRunning, setIsRunning] = useState(false)
 
   useEffect(() => {
-    if (!loading && !user) router.push('/')
+    if (!loading &&!user) router.push('/')
   }, [user, loading, router])
 
   const runCode = async () => {
@@ -30,7 +36,7 @@ export default function EditorPage() {
     const res = await fetch('/api/run-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language, code })
+      body: JSON.stringify({ language, code, stdin: userInput }) // Added stdin
     })
     
     const data = await res.json()
@@ -69,17 +75,30 @@ export default function EditorPage() {
       </div>
       
       <Editor
-        height="50vh"
-        language={language === 'cpp' ? 'cpp' : language}
+        height="45vh"
+        language={language === 'cpp'? 'cpp' : language}
         value={code}
         onChange={(value) => setCode(value || '')}
         theme="vs-dark"
         options={{ fontSize: 14, minimap: { enabled: false } }}
       />
       
-      <div className="bg-black text-green-400 p-4 font-mono mt-2 h-40 overflow-auto rounded border border-gray-700">
-        <div className="text-gray-500 text-xs mb-2">Output:</div>
-        <pre>{output}</pre>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <div>
+          <div className="text-gray-400 text-xs mb-1">Input (stdin):</div>
+          <textarea
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            placeholder="Enter input here..."
+            className="w-full h-20 bg-gray-900 text-white p-2 font-mono rounded border border-gray-700 resize-none"
+          />
+        </div>
+        <div>
+          <div className="text-gray-400 text-xs mb-1">Output:</div>
+          <div className="bg-black text-green-400 p-2 font-mono h-20 overflow-auto rounded border border-gray-700">
+            <pre>{output}</pre>
+          </div>
+        </div>
       </div>
     </div>
   )
