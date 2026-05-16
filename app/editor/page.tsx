@@ -1,12 +1,11 @@
-"use client"
-import { useEffect, useState, Suspense } from 'react'
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
 import Editor from '@monaco-editor/react'
-import { auth, db } from '../../lib/firebase'
-import { onAuthStateChanged } from 'firebase/auth'
-import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import toast, { Toaster } from 'react-hot-toast'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { FiPlus, FiX, FiColumns, FiFolder, FiChevronDown, FiChevronRight, FiFolderPlus, FiFile } from 'react-icons/fi'
+import { 
+  Files, FolderOpen, FilePlus, FolderPlus, 
+  Play, X, ChevronRight, ChevronDown 
+} from 'lucide-react'
 
 type FileItem = {
   id: string
@@ -15,78 +14,35 @@ type FileItem = {
   path: string
   content?: string
   language?: string
+  children?: FileItem[]
 }
 
-function EditorComponent() {
-  const [user, setUser] = useState<any>(null)
+export default function EditorPage() {
   const [items, setItems] = useState<FileItem[]>([
-    { id: '1', name: 'main.py', type: 'file', path: '/', content: 'a = 10\nprint(a)', language: 'python' }
+    {
+      id: '1',
+      name: 'main.py',
+      type: 'file',
+      path: '/',
+      content: '# Welcome to Code Editor\nprint("Hello, World!")',
+      language: 'python'
+    }
   ])
   const [activeFileId, setActiveFileId] = useState('1')
-  const [splitFileId, setSplitFileId] = useState<string | null>(null)
-  const [input, setInput] = useState('')
-  const [output, setOutput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [explaining, setExplaining] = useState(false)
-  const [explanation, setExplanation] = useState('')
-  const [showExplain, setShowExplain] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [lastSaved, setLastSaved] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const shareId = searchParams.get('share')
+  const [output, setOutput] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  const activeFile = items.find(i => i.id === activeFileId && i.type === 'file')
-  const splitFile = items.find(i => i.id === splitFileId && i.type === 'file')
-  const files = items.filter(i => i.type === 'file')
+  const activeFile = items.find(item => item.id === activeFileId && item.type === 'file')
 
-  useEffect(() => {
-    const loadCode = async () => {
-      if (shareId) {
-        const snap = await getDoc(doc(db, 'snippets', shareId))
-        if (snap.exists()) {
-          const data = snap.data()
-          if (data.items) {
-            setItems(data.items)
-            const firstFile = data.items.find((i: FileItem) => i.type === 'file')
-            if (firstFile) setActiveFileId(firstFile.id)
-          }
-          setInput(data.input || '')
-          toast.success('Loaded shared project')
-        } else {
-          toast.error('Share link not found')
-        }
-        return
-      }
-
-      onAuthStateChanged(auth, async (currentUser) => {
-        if (!currentUser) return router.push('/login')
-        setUser(currentUser)
-        const snap = await getDoc(doc(db, 'users', currentUser.uid))
-        if (snap.exists() && snap.data().items) setItems(snap.data().items)
-      })
+  const toggleFolder = (path: string) => {
+    const newExpanded = new Set(expanded)
+    if (newExpanded.has(path)) {
+      newExpanded.delete(path)
+    } else {
+      newExpanded.add(path)
     }
-    loadCode()
-  }, [shareId, router])
-
-  useEffect(() => {
-    if (!user || shareId) return
-    const timer = setTimeout(async () => {
-      try {
-        await setDoc(doc(db, 'users', user.uid), {
-          items, updatedAt: serverTimestamp()
-        })
-        setLastSaved(new Date().toLocaleTimeString())
-      } catch (e) {
-        console.log('Auto-save failed')
-      }
-    }, 3000)
-    return () => clearTimeout(timer)
-  }, [items, user, shareId])
-
-  const updateFile = (id: string, content: string) => {
-    setItems(items.map(i => i.id === id? {...i, content } : i))
+    setExpanded(newExpanded)
   }
 
   const addFile = (path: string = '/') => {
@@ -114,258 +70,175 @@ function EditorComponent() {
       id: Date.now().toString(),
       name,
       type: 'folder',
-      path
+      path,
+      children: []
     }
     setItems([...items, newFolder])
-    setExpanded(new Set([...expanded, path, `${path}${name}/`]))
+    setExpanded(new Set([...expanded, path]))
   }
 
   const deleteItem = (id: string) => {
-    const item = items.find(i => i.id === id)
-    if (!item) return
-    if (files.length === 1 && item.type === 'file') {
-      return toast.error('Cannot delete last file')
-    }
-    if (!confirm(`Delete ${item.name}?`)) return
-    
-    const itemPath = item.type === 'folder'? `${item.path}${item.name}/` : ''
-    setItems(items.filter(i => i.id!== id && (item.type!== 'folder' ||!i.path.startsWith(itemPath))))
-    
+    setItems(items.filter(item => item.id !== id))
     if (activeFileId === id) {
-      const remainingFiles = files.filter(f => f.id!== id)
-      if (remainingFiles[0]) setActiveFileId(remainingFiles[0].id)
+      const firstFile = items.find(item => item.type === 'file' && item.id !== id)
+      setActiveFileId(firstFile?.id || '')
     }
-    if (splitFileId === id) setSplitFileId(null)
   }
 
-  const toggleFolder = (path: string) => {
-    const newExpanded = new Set(expanded)
-    if (newExpanded.has(path)) newExpanded.delete(path)
-    else newExpanded.add(path)
-    setExpanded(newExpanded)
-  }
-
-  const toggleSplit = () => {
-    if (splitFileId) {
-      setSplitFileId(null)
-    } else {
-      const otherFile = files.find(f => f.id!== activeFileId)
-      if (otherFile) setSplitFileId(otherFile.id)
-      else toast.error('Add another file first')
-    }
+  const updateFileContent = (content: string) => {
+    setItems(items.map(item => 
+      item.id === activeFileId ? { ...item, content } : item
+    ))
   }
 
   const runCode = async () => {
     if (!activeFile) return
-    setLoading(true)
     setOutput('Running...')
-    try {
-      const res = await fetch('/api/run-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: activeFile.content, language: activeFile.language, stdin: input })
-      })
-      const data = await res.json()
-      setOutput(data.error || data.output || 'No output')
-    } catch {
-      setOutput('Error running code')
-    }
-    setLoading(false)
+    // Add your Piston API logic here
+    setTimeout(() => {
+      setOutput('Hello, World!\n')
+    }, 500)
   }
 
-  const saveCode = async () => {
-    if (!user) return toast.error('Login to save')
-    await setDoc(doc(db, 'users', user.uid), { items, updatedAt: serverTimestamp() })
-    setLastSaved(new Date().toLocaleTimeString())
-    toast.success('Project saved')
+  const getFileTree = (parentPath: string = '/'): FileItem[] => {
+    return items.filter(item => item.path === parentPath)
   }
 
-  const shareCode = async () => {
-    if (!user) return toast.error('Login to share')
-    const docRef = await addDoc(collection(db, 'snippets'), {
-      items, input, createdAt: serverTimestamp()
-    })
-    const url = `${window.location.origin}/editor?share=${docRef.id}`
-    await navigator.clipboard.writeText(url)
-    toast.success('Share link copied!')
-  }
-
-  const explainCode = async () => {
-    if (!activeFile?.content?.trim()) return toast.error('Write some code first')
-    setExplaining(true)
-    setShowExplain(true)
-    setExplanation('Thinking...')
-    try {
-      const res = await fetch('/api/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: activeFile.content, language: activeFile.language })
-      })
-      const data = await res.json()
-      setExplanation(data.explanation || data.error || 'Could not explain')
-    } catch {
-      setExplanation('Error getting explanation')
-    }
-    setExplaining(false)
-  }
-
-  const getIcon = (name: string) => {
-    const ext = name.split('.').pop()
-    if (ext === 'py') return '🐍'
-    if (ext === 'js') return '📜'
-    if (ext === 'ts') return '📘'
-    if (ext === 'java') return '☕'
-    if (ext === 'cpp' || ext === 'c') return '⚙️'
-    if (ext === 'html') return '🌐'
-    if (ext === 'css') return '🎨'
-    return '📄'
-  }
-
-  const renderItems = (currentPath: string, depth = 0) => {
-    const children = items.filter(i => i.path === currentPath)
-    return children.map(item => {
-      const fullPath = `${item.path}${item.name}${item.type === 'folder'? '/' : ''}`
-      return (
-        <div key={item.id}>
-          <div 
-            className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer text-sm group ${
-              item.type === 'file' && activeFileId === item.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
-            }`}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            onClick={() => item.type === 'file'? setActiveFileId(item.id) : toggleFolder(fullPath)}
-          >
-            {item.type === 'folder' && (expanded.has(fullPath)? <FiChevronDown className="text-xs" /> : <FiChevronRight className="text-xs" />)}
-            {item.type === 'folder'? <FiFolder className="text-blue-400 text-xs" /> : <span className="text-xs">{getIcon(item.name)}</span>}
-            <span className="flex-1 truncate">{item.name}</span>
-            <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-              {item.type === 'folder' && (
-                <>
-                  <FiFile className="text-xs hover:text-green-400" onClick={(e) => { e.stopPropagation(); addFile(fullPath) }} />
-                  <FiFolderPlus className="text-xs hover:text-blue-400" onClick={(e) => { e.stopPropagation(); addFolder(fullPath) }} />
-                </>
-              )}
-              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteItem(item.id) }} />
+  const renderTree = (parentPath: string = '/', level: number = 0) => {
+    const treeItems = getFileTree(parentPath)
+    return treeItems.map(item => {
+      const itemPath = parentPath === '/' ? `/${item.name}` : `${parentPath}/${item.name}`
+      const isExpanded = expanded.has(itemPath)
+      
+      if (item.type === 'folder') {
+        return (
+          <div key={item.id}>
+            <div 
+              className="flex items-center gap-1 px-2 py-1 hover:bg-gray-800 cursor-pointer group"
+              style={{ paddingLeft: `${level * 12 + 8}px` }}
+              onClick={() => toggleFolder(itemPath)}
+            >
+              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              {isExpanded ? <FolderOpen size={16} className="text-blue-400" /> : <Folder size={16} className="text-blue-400" />}
+              <span className="text-sm text-gray-300 flex-1">{item.name}</span>
+              <button 
+                onClick={(e) => { e.stopPropagation(); addFile(itemPath) }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded"
+              >
+                <FilePlus size={14} />
+              </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); addFolder(itemPath) }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded"
+              >
+                <FolderPlus size={14} />
+              </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); deleteItem(item.id) }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded text-red-400"
+              >
+                <X size={14} />
+              </button>
             </div>
+            {isExpanded && renderTree(itemPath, level + 1)}
           </div>
-          {item.type === 'folder' && expanded.has(fullPath) && renderItems(fullPath, depth + 1)}
+        )
+      }
+      
+      return (
+        <div 
+          key={item.id}
+          className={`flex items-center gap-2 px-2 py-1 hover:bg-gray-800 cursor-pointer group ${
+            activeFileId === item.id ? 'bg-gray-800 border-l-2 border-blue-500' : ''
+          }`}
+          style={{ paddingLeft: `${level * 12 + 24}px` }}
+          onClick={() => setActiveFileId(item.id)}
+        >
+          <Files size={16} className="text-gray-400" />
+          <span className="text-sm text-gray-300 flex-1">{item.name}</span>
+          <button 
+            onClick={(e) => { e.stopPropagation(); deleteItem(item.id) }}
+            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded text-red-400"
+          >
+            <X size={14} />
+          </button>
         </div>
       )
     })
   }
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white flex">
-      <Toaster position="top-right" />
-      
-      {sidebarOpen && (
-        <div className="w-60 bg-[#161b22] border-r border-gray-700 flex flex-col">
-          <div className="p-3 border-b border-gray-700 flex justify-between items-center">
-            <span className="text-sm font-semibold">EXPLORER</span>
-            <div className="flex gap-1">
-              <button onClick={() => addFile('/')} className="p-1 hover:bg-gray-700 rounded" title="New File">
-                <FiFile className="text-sm" />
-              </button>
-              <button onClick={() => addFolder('/')} className="p-1 hover:bg-gray-700 rounded" title="New Folder">
-                <FiFolderPlus className="text-sm" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-1">
-            {renderItems('/')}
-          </div>
-          {lastSaved && <div className="p-2 border-t border-gray-700 text-xs text-gray-500">Saved {lastSaved}</div>}
+    <div className="h-screen flex flex-col bg-[#1e1e1e] text-gray-300">
+      <div className="h-12 bg-[#2d2d2d] border-b border-gray-800 flex items-center justify-between px-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-gray-700 rounded">
+            <Files size={18} />
+          </button>
+          <span className="font-semibold">Code Editor</span>
         </div>
-      )}
+        <button 
+          onClick={runCode}
+          className="flex items-center gap-2 px-4 py-1.5 bg-green-600 hover:bg-green-700 rounded text-white text-sm"
+        >
+          <Play size={16} /> Run
+        </button>
+      </div>
 
-      <div className="flex-1 flex flex-col">
-        <div className="flex justify-between items-center p-2 border-b border-gray-700 bg-[#161b22]">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-gray-700 rounded">
-              <FiFolder />
-            </button>
-            <h1 className="text-lg font-bold">ASCET Editor</h1>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={toggleSplit} className={`px-3 py-1.5 rounded text-sm ${splitFileId? 'bg-blue-600' : 'bg-gray-600'} hover:opacity-80`}>
-              <FiColumns />
-            </button>
-            <button onClick={runCode} disabled={loading} className="px-3 py-1.5 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 text-sm">
-              {loading? 'Running...' : 'Run'}
-            </button>
-            <button onClick={explainCode} disabled={explaining} className="px-3 py-1.5 bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-50 text-sm">
-              {explaining? '...' : 'Explain'}
-            </button>
-            <button onClick={saveCode} className="px-3 py-1.5 bg-gray-600 rounded hover:bg-gray-700 text-sm">Save</button>
-            <button onClick={shareCode} className="px-3 py-1.5 bg-green-600 rounded hover:bg-green-700 text-sm">Share</button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 bg-[#161b22] p-1 border-b border-gray-700 overflow-x-auto">
-          {files.map(file => (
-            <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-t cursor-pointer text-sm ${
-              activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
-            }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
-              <span>{getIcon(file.name)}</span>
-              <span>{file.name}</span>
-              {files.length > 1 && <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteItem(file.id) }} />}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0">
-          <div className={`flex gap-0.5 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
-            {activeFile && (
-              <Editor
-                height="100%"
-                language={activeFile.language}
-                value={activeFile.content}
-                onChange={v => updateFile(activeFileId, v || '')}
-                theme="vs-dark"
-                options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-                className={splitFileId? 'w-1/2' : 'w-full'}
-              />
-            )}
-            {splitFileId && splitFile && (
-              <Editor
-                height="100%"
-                language={splitFile.language}
-                value={splitFile.content}
-                onChange={v => updateFile(splitFileId, v || '')}
-                theme="vs-dark"
-                options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-                className="w-1/2"
-              />
-            )}
-          </div>
-          <div className={`flex flex-col gap-2 p-2 bg-[#0d1117] ${splitFileId? 'col-span-2' : ''}`}>
-            <div>
-              <p className="text-xs mb-1 text-gray-400">Input (stdin):</p>
-              <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Input here..." className="w-full h-20 bg-[#161b22] p-2 rounded border border-gray-700 font-mono text-xs resize-none focus:outline-none focus:border-blue-500" />
-            </div>
-            <div>
-              <p className="text-xs mb-1 text-gray-400">Output:</p>
-              <pre className="w-full h-28 bg-black p-2 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-xs">{output}</pre>
-            </div>
-            {showExplain && (
-              <div className="flex-1 flex flex-col">
-                <div className="flex justify-between items-center mb-1">
-                  <p className="text-xs text-purple-400">AI Explanation:</p>
-                  <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
-                </div>
-                <div className="w-full flex-1 bg-[#161b22] p-2 rounded border border-purple-700 overflow-auto text-gray-200 text-xs whitespace-pre-wrap">{explanation}</div>
+      <div className="flex-1 flex overflow-hidden">
+        {sidebarOpen && (
+          <div className="w-64 bg-[#252526] border-r border-gray-800 flex flex-col">
+            <div className="p-2 border-b border-gray-800 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-400 uppercase">Explorer</span>
+              <div className="flex gap-1">
+                <button onClick={() => addFile()} className="p-1 hover:bg-gray-700 rounded">
+                  <FilePlus size={16} />
+                </button>
+                <button onClick={() => addFolder()} className="p-1 hover:bg-gray-700 rounded">
+                  <FolderPlus size={16} />
+                </button>
               </div>
-            )}
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {renderTree()}
+            </div>
           </div>
+        )}
+
+        <div className="flex-1 flex flex-col">
+          {activeFile ? (
+            <>
+              <div className="h-9 bg-[#2d2d2d] border-b border-gray-800 flex items-center px-4">
+                <span className="text-sm">{activeFile.name}</span>
+              </div>
+              <div className="flex-1">
+                <Editor
+                  height="100%"
+                  language={activeFile.language}
+                  value={activeFile.content}
+                  onChange={(value) => updateFileContent(value || '')}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                  }}
+                />
+              </div>
+              <div className="h-48 bg-[#1e1e1e] border-t border-gray-800">
+                <div className="h-8 bg-[#2d2d2d] border-b border-gray-800 flex items-center px-4">
+                  <span className="text-xs font-semibold text-gray-400 uppercase">Output</span>
+                </div>
+                <pre className="p-4 text-sm font-mono overflow-y-auto h-[calc(100%-32px)]">
+                  {output || 'Click Run to execute code'}
+                </pre>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              Select a file or create a new one
+            </div>
+          )}
         </div>
       </div>
     </div>
-  )
-}
-
-export default function Page(){
-  return (
-    <Suspense fallback={<div className="bg-[#0d1117] text-white p-4">Loading Editor...</div>}>
-      <EditorComponent />
-    </Suspense>
   )
 }
