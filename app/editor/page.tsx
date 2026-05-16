@@ -6,7 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FiPlus, FiX } from 'react-icons/fi'
+import { FiPlus, FiX, FiColumns } from 'react-icons/fi'
 
 type FileTab = {
   id: string
@@ -21,6 +21,7 @@ function EditorComponent() {
     { id: '1', name: 'main.py', content: 'a = 10\nprint(a)', language: 'python' }
   ])
   const [activeFileId, setActiveFileId] = useState('1')
+  const [splitFileId, setSplitFileId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,6 +33,7 @@ function EditorComponent() {
   const shareId = searchParams.get('share')
 
   const activeFile = files.find(f => f.id === activeFileId) || files[0]
+  const splitFile = files.find(f => f.id === splitFileId)
 
   useEffect(() => {
     const loadCode = async () => {
@@ -66,8 +68,8 @@ function EditorComponent() {
     loadCode()
   }, [shareId, router])
 
-  const updateActiveFile = (content: string) => {
-    setFiles(files.map(f => f.id === activeFileId? {...f, content } : f))
+  const updateFile = (id: string, content: string) => {
+    setFiles(files.map(f => f.id === id? {...f, content } : f))
   }
 
   const addFile = () => {
@@ -90,6 +92,17 @@ function EditorComponent() {
     const newFiles = files.filter(f => f.id!== id)
     setFiles(newFiles)
     if (activeFileId === id) setActiveFileId(newFiles[0].id)
+    if (splitFileId === id) setSplitFileId(null)
+  }
+
+  const toggleSplit = () => {
+    if (splitFileId) {
+      setSplitFileId(null)
+    } else {
+      const otherFile = files.find(f => f.id!== activeFileId)
+      if (otherFile) setSplitFileId(otherFile.id)
+      else toast.error('Add another file first')
+    }
   }
 
   const runCode = async () => {
@@ -156,6 +169,9 @@ function EditorComponent() {
       <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl font-bold">ASCET Editor</h1>
         <div className="flex gap-2">
+          <button onClick={toggleSplit} className={`px-3 py-2 rounded ${splitFileId? 'bg-blue-600' : 'bg-gray-600'} hover:opacity-80`}>
+            <FiColumns />
+          </button>
           <button onClick={runCode} disabled={loading} className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
             {loading? 'Running...' : 'Run'}
           </button>
@@ -171,7 +187,7 @@ function EditorComponent() {
         {files.map(file => (
           <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer ${
             activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
-          }`} onClick={() => setActiveFileId(file.id)}>
+          }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
             <span className="text-sm">{file.name}</span>
             {files.length > 1 && (
               <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); closeFile(file.id) }} />
@@ -184,19 +200,29 @@ function EditorComponent() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-140px)]">
-        <Editor
-          height="100%"
-          language={activeFile.language}
-          value={activeFile.content}
-          onChange={v => updateActiveFile(v || '')}
-          theme="vs-dark"
-          options={{
-            fontSize: 14,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false
-          }}
-        />
-        <div className="flex flex-col gap-4">
+        <div className={`flex gap-2 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
+          <Editor
+            height="100%"
+            language={activeFile.language}
+            value={activeFile.content}
+            onChange={v => updateFile(activeFileId, v || '')}
+            theme="vs-dark"
+            options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
+            className={splitFileId? 'w-1/2' : 'w-full'}
+          />
+          {splitFileId && splitFile && (
+            <Editor
+              height="100%"
+              language={splitFile.language}
+              value={splitFile.content}
+              onChange={v => updateFile(splitFileId, v || '')}
+              theme="vs-dark"
+              options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
+              className="w-1/2"
+            />
+          )}
+        </div>
+        <div className={`flex flex-col gap-4 ${splitFileId? 'col-span-2' : ''}`}>
           <div>
             <p className="text-sm mb-1 text-gray-400">Input (stdin):</p>
             <textarea
