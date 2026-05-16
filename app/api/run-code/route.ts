@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
-  const { language, code } = await request.json();
+  const { language, code, stdin } = await request.json(); // Added stdin
   
   const langMap: Record<string, number> = {
     java: 62,
@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         language_id: langMap[language],
-        source_code: code
+        source_code: code,
+        stdin: stdin || '' // Pass stdin to Judge0
       })
     });
 
