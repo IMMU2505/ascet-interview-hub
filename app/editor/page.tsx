@@ -25,7 +25,7 @@ export default function EditorPage() {
   const [code, setCode] = useState('')
   const [language, setLanguage] = useState('java')
   const [userInput, setUserInput] = useState('')
-  const [output, setOutput] = useState('Select a problem to start')
+  const [output, setOutput] = useState('Loading problem...')
   const [isRunning, setIsRunning] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [snippets, setSnippets] = useState<any[]>([])
@@ -51,10 +51,12 @@ export default function EditorPage() {
     if (docSnap.exists()) {
       const p = { id: docSnap.id,...docSnap.data() } as Problem
       setProblem(p)
-      setCode(p.starterCode[language] || '')
-      setUserInput(p.testCases[0]?.input || '')
+      setCode(p.starterCode?.[language] || '')
+      setUserInput(p.testCases?.[0]?.input || '')
       setOutput('Problem loaded. Write your solution and hit Run.')
       setTestResults([])
+    } else {
+      setOutput('Problem not found in Firestore')
     }
   }
 
@@ -133,8 +135,8 @@ export default function EditorPage() {
 
   const handleLanguageChange = (lang: string) => {
     setLanguage(lang)
-    if (problem?.starterCode) {
-      setCode(problem.starterCode[lang] || '')
+    if (problem?.starterCode?.[lang]) {
+      setCode(problem.starterCode[lang])
     }
   }
 
@@ -169,7 +171,7 @@ export default function EditorPage() {
             <p className="text-gray-300 text-sm mt-3 whitespace-pre-wrap">{problem.description}</p>
 
             <h3 className="font-bold mt-4 mb-2 text-sm">Example Test Cases:</h3>
-            {problem.testCases.map((tc, i) => (
+            {problem.testCases?.map((tc, i) => (
               <div key={i} className="bg-gray-900 p-2 rounded mb-2 text-xs">
                 <div><span className="text-gray-500">Input:</span> {tc.input.replace('\n', ' | ')}</div>
                 <div><span className="text-gray-500">Output:</span> {tc.output}</div>
