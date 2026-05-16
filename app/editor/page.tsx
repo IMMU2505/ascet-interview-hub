@@ -6,29 +6,21 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import toast, { Toaster } from 'react-hot-toast'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FiPlus, FiX, FiColumns, FiFile, FiFolder, FiChevronDown, FiChevronRight, FiFolderPlus } from 'react-icons/fi'
+import { FiPlus, FiX, FiColumns, FiFolder, FiChevronDown, FiChevronRight, FiFolderPlus, FiFile } from 'react-icons/fi'
 
-type FileNode = {
+type FileItem = {
   id: string
   name: string
   type: 'file' | 'folder'
+  path: string
   content?: string
   language?: string
-  children?: FileNode[]
-  parentId?: string | null
 }
 
 function EditorComponent() {
   const [user, setUser] = useState<any>(null)
-  const [tree, setTree] = useState<FileNode[]>([
-    { 
-      id: 'root', 
-      name: 'ASCET-PROJECT', 
-      type: 'folder', 
-      children: [
-        { id: '1', name: 'main.py', type: 'file', content: 'a = 10\nprint(a)', language: 'python', parentId: 'root' }
-      ]
-    }
+  const [items, setItems] = useState<FileItem[]>([
+    { id: '1', name: 'main.py', type: 'file', path: '/', content: 'a = 10\nprint(a)', language: 'python' }
   ])
   const [activeFileId, setActiveFileId] = useState('1')
   const [splitFileId, setSplitFileId] = useState<string | null>(null)
@@ -40,34 +32,14 @@ function EditorComponent() {
   const [showExplain, setShowExplain] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [lastSaved, setLastSaved] = useState('')
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['root']))
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
   const router = useRouter()
   const searchParams = useSearchParams()
   const shareId = searchParams.get('share')
 
-  const findFile = (nodes: FileNode[], id: string): FileNode | null => {
-    for (const node of nodes) {
-      if (node.id === id) return node
-      if (node.children) {
-        const found = findFile(node.children, id)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  const getAllFiles = (nodes: FileNode[]): FileNode[] => {
-    let files: FileNode[] = []
-    for (const node of nodes) {
-      if (node.type === 'file') files.push(node)
-      if (node.children) files = [...files,...getAllFiles(node.children)]
-    }
-    return files
-  }
-
-  const activeFile = findFile(tree, activeFileId)
-  const splitFile = splitFileId? findFile(tree, splitFileId) : null
-  const allFiles = getAllFiles(tree)
+  const activeFile = items.find(i => i.id === activeFileId && i.type === 'file')
+  const splitFile = items.find(i => i.id === splitFileId && i.type === 'file')
+  const files = items.filter(i => i.type === 'file')
 
   useEffect(() => {
     const loadCode = async () => {
@@ -75,9 +47,9 @@ function EditorComponent() {
         const snap = await getDoc(doc(db, 'snippets', shareId))
         if (snap.exists()) {
           const data = snap.data()
-          if (data.tree) {
-            setTree(data.tree)
-            const firstFile = getAllFiles(data.tree)[0]
+          if (data.items) {
+            setItems(data.items)
+            const firstFile = data.items.find((i: FileItem) => i.type === 'file')
             if (firstFile) setActiveFileId(firstFile.id)
           }
           setInput(data.input || '')
@@ -92,10 +64,7 @@ function EditorComponent() {
         if (!currentUser) return router.push('/login')
         setUser(currentUser)
         const snap = await getDoc(doc(db, 'users', currentUser.uid))
-        if (snap.exists()) {
-          const data = snap.data()
-          if (data.tree) setTree(data.tree)
-        }
+        if (snap.exists() && snap.data().items) setItems(snap.data().items)
       })
     }
     loadCode()
@@ -106,7 +75,7 @@ function EditorComponent() {
     const timer = setTimeout(async () => {
       try {
         await setDoc(doc(db, 'users', user.uid), {
-          tree, updatedAt: serverTimestamp()
+          items, updatedAt: serverTimestamp()
         })
         setLastSaved(new Date().toLocaleTimeString())
       } catch (e) {
@@ -114,96 +83,65 @@ function EditorComponent() {
       }
     }, 3000)
     return () => clearTimeout(timer)
-  }, [tree, user, shareId])
+  }, [items, user, shareId])
 
-  const updateFileContent = (id: string, content: string) => {
-    const updateNode = (nodes: FileNode[]): FileNode[] => {
-      return nodes.map(node => {
-        if (node.id === id) return {...node, content }
-        if (node.children) return {...node, children: updateNode(node.children) }
-        return node
-      })
-    }
-    setTree(updateNode(tree))
+  const updateFile = (id: string, content: string) => {
+    setItems(items.map(i => i.id === id? {...i, content } : i))
   }
 
-  const addFile = (parentId: string = 'root') => {
+  const addFile = (path: string = '/') => {
     const name = prompt('File name? (e.g. utils.py, main.js)')
     if (!name) return
     const ext = name.split('.').pop()
     const langMap: any = { py: 'python', js: 'javascript', java: 'java', cpp: 'cpp', c: 'cpp', ts: 'typescript', html: 'html', css: 'css' }
-    const newFile: FileNode = {
+    const newFile: FileItem = {
       id: Date.now().toString(),
       name,
       type: 'file',
+      path,
       content: '',
-      language: langMap[ext || ''] || 'python',
-      parentId
+      language: langMap[ext || ''] || 'python'
     }
-    
-    const addToTree = (nodes: FileNode[]): FileNode[] => {
-      return nodes.map(node => {
-        if (node.id === parentId) {
-          return {...node, children: [...(node.children || []), newFile] }
-        }
-        if (node.children) return {...node, children: addToTree(node.children) }
-        return node
-      })
-    }
-    setTree(addToTree(tree))
+    setItems([...items, newFile])
     setActiveFileId(newFile.id)
-    setExpanded(new Set([...expanded, parentId]))
+    setExpanded(new Set([...expanded, path]))
   }
 
-  const addFolder = (parentId: string = 'root') => {
+  const addFolder = (path: string = '/') => {
     const name = prompt('Folder name?')
     if (!name) return
-    const newFolder: FileNode = {
+    const newFolder: FileItem = {
       id: Date.now().toString(),
       name,
       type: 'folder',
-      children: [],
-      parentId
+      path
     }
-    
-    const addToTree = (nodes: FileNode[]): FileNode[] => {
-      return nodes.map(node => {
-        if (node.id === parentId) {
-          return {...node, children: [...(node.children || []), newFolder] }
-        }
-        if (node.children) return {...node, children: addToTree(node.children) }
-        return node
-      })
-    }
-    setTree(addToTree(tree))
-    setExpanded(new Set([...expanded, parentId, newFolder.id]))
+    setItems([...items, newFolder])
+    setExpanded(new Set([...expanded, path, `${path}${name}/`]))
   }
 
-  const deleteNode = (id: string) => {
-    if (allFiles.length === 1 && findFile(tree, id)?.type === 'file') {
+  const deleteItem = (id: string) => {
+    const item = items.find(i => i.id === id)
+    if (!item) return
+    if (files.length === 1 && item.type === 'file') {
       return toast.error('Cannot delete last file')
     }
-    if (!confirm('Delete this?')) return
+    if (!confirm(`Delete ${item.name}?`)) return
     
-    const removeFromTree = (nodes: FileNode[]): FileNode[] => {
-      return nodes.filter(node => {
-        if (node.id === id) return false
-        if (node.children) node.children = removeFromTree(node.children)
-        return true
-      })
-    }
-    setTree(removeFromTree(tree))
+    const itemPath = item.type === 'folder'? `${item.path}${item.name}/` : ''
+    setItems(items.filter(i => i.id!== id && (item.type!== 'folder' ||!i.path.startsWith(itemPath))))
+    
     if (activeFileId === id) {
-      const firstFile = getAllFiles(tree.filter(n => n.id!== id))[0]
-      if (firstFile) setActiveFileId(firstFile.id)
+      const remainingFiles = files.filter(f => f.id!== id)
+      if (remainingFiles[0]) setActiveFileId(remainingFiles[0].id)
     }
     if (splitFileId === id) setSplitFileId(null)
   }
 
-  const toggleFolder = (id: string) => {
+  const toggleFolder = (path: string) => {
     const newExpanded = new Set(expanded)
-    if (newExpanded.has(id)) newExpanded.delete(id)
-    else newExpanded.add(id)
+    if (newExpanded.has(path)) newExpanded.delete(path)
+    else newExpanded.add(path)
     setExpanded(newExpanded)
   }
 
@@ -211,25 +149,21 @@ function EditorComponent() {
     if (splitFileId) {
       setSplitFileId(null)
     } else {
-      const otherFile = allFiles.find(f => f.id!== activeFileId)
+      const otherFile = files.find(f => f.id!== activeFileId)
       if (otherFile) setSplitFileId(otherFile.id)
       else toast.error('Add another file first')
     }
   }
 
   const runCode = async () => {
-    if (!activeFile || activeFile.type!== 'file') return
+    if (!activeFile) return
     setLoading(true)
     setOutput('Running...')
     try {
       const res = await fetch('/api/run-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: activeFile.content,
-          language: activeFile.language,
-          stdin: input
-        })
+        body: JSON.stringify({ code: activeFile.content, language: activeFile.language, stdin: input })
       })
       const data = await res.json()
       setOutput(data.error || data.output || 'No output')
@@ -241,9 +175,7 @@ function EditorComponent() {
 
   const saveCode = async () => {
     if (!user) return toast.error('Login to save')
-    await setDoc(doc(db, 'users', user.uid), {
-      tree, updatedAt: serverTimestamp()
-    })
+    await setDoc(doc(db, 'users', user.uid), { items, updatedAt: serverTimestamp() })
     setLastSaved(new Date().toLocaleTimeString())
     toast.success('Project saved')
   }
@@ -251,7 +183,7 @@ function EditorComponent() {
   const shareCode = async () => {
     if (!user) return toast.error('Login to share')
     const docRef = await addDoc(collection(db, 'snippets'), {
-      tree, input, createdAt: serverTimestamp()
+      items, input, createdAt: serverTimestamp()
     })
     const url = `${window.location.origin}/editor?share=${docRef.id}`
     await navigator.clipboard.writeText(url)
@@ -259,7 +191,7 @@ function EditorComponent() {
   }
 
   const explainCode = async () => {
-    if (!activeFile ||!activeFile.content?.trim()) return toast.error('Write some code first')
+    if (!activeFile?.content?.trim()) return toast.error('Write some code first')
     setExplaining(true)
     setShowExplain(true)
     setExplanation('Thinking...')
@@ -277,7 +209,7 @@ function EditorComponent() {
     setExplaining(false)
   }
 
-  const getFileIcon = (name: string) => {
+  const getIcon = (name: string) => {
     const ext = name.split('.').pop()
     if (ext === 'py') return '🐍'
     if (ext === 'js') return '📜'
@@ -289,36 +221,36 @@ function EditorComponent() {
     return '📄'
   }
 
-  const renderTree = (nodes: FileNode[], depth = 0) => {
-    return nodes.map(node => (
-      <div key={node.id}>
-        <div 
-          className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer text-sm group ${
-            node.type === 'file' && activeFileId === node.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
-          }`}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          onClick={() => node.type === 'file'? setActiveFileId(node.id) : toggleFolder(node.id)}
-        >
-          {node.type === 'folder' && (
-            expanded.has(node.id)? <FiChevronDown className="text-xs" /> : <FiChevronRight className="text-xs" />
-          )}
-          {node.type === 'folder'? <FiFolder className="text-blue-400 text-xs" /> : <span className="text-xs">{getFileIcon(node.name)}</span>}
-          <span className="flex-1 truncate">{node.name}</span>
-          <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-            {node.type === 'folder' && (
-              <>
-                <FiFile className="text-xs hover:text-green-400" onClick={(e) => { e.stopPropagation(); addFile(node.id) }} />
-                <FiFolderPlus className="text-xs hover:text-blue-400" onClick={(e) => { e.stopPropagation(); addFolder(node.id) }} />
-              </>
-            )}
-            {node.id!== 'root' && (
-              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteNode(node.id) }} />
-            )}
+  const renderItems = (currentPath: string, depth = 0) => {
+    const children = items.filter(i => i.path === currentPath)
+    return children.map(item => {
+      const fullPath = `${item.path}${item.name}${item.type === 'folder'? '/' : ''}`
+      return (
+        <div key={item.id}>
+          <div 
+            className={`flex items-center gap-1 px-2 py-1 rounded cursor-pointer text-sm group ${
+              item.type === 'file' && activeFileId === item.id? 'bg-[#0d1117] text-white' : 'text-gray-300 hover:bg-[#0d1117]'
+            }`}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            onClick={() => item.type === 'file'? setActiveFileId(item.id) : toggleFolder(fullPath)}
+          >
+            {item.type === 'folder' && (expanded.has(fullPath)? <FiChevronDown className="text-xs" /> : <FiChevronRight className="text-xs" />)}
+            {item.type === 'folder'? <FiFolder className="text-blue-400 text-xs" /> : <span className="text-xs">{getIcon(item.name)}</span>}
+            <span className="flex-1 truncate">{item.name}</span>
+            <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+              {item.type === 'folder' && (
+                <>
+                  <FiFile className="text-xs hover:text-green-400" onClick={(e) => { e.stopPropagation(); addFile(fullPath) }} />
+                  <FiFolderPlus className="text-xs hover:text-blue-400" onClick={(e) => { e.stopPropagation(); addFolder(fullPath) }} />
+                </>
+              )}
+              <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteItem(item.id) }} />
+            </div>
           </div>
+          {item.type === 'folder' && expanded.has(fullPath) && renderItems(fullPath, depth + 1)}
         </div>
-        {node.type === 'folder' && expanded.has(node.id) && node.children && renderTree(node.children, depth + 1)}
-      </div>
-    ))
+      )
+    })
   }
 
   return (
@@ -330,22 +262,18 @@ function EditorComponent() {
           <div className="p-3 border-b border-gray-700 flex justify-between items-center">
             <span className="text-sm font-semibold">EXPLORER</span>
             <div className="flex gap-1">
-              <button onClick={() => addFile()} className="p-1 hover:bg-gray-700 rounded" title="New File">
+              <button onClick={() => addFile('/')} className="p-1 hover:bg-gray-700 rounded" title="New File">
                 <FiFile className="text-sm" />
               </button>
-              <button onClick={() => addFolder()} className="p-1 hover:bg-gray-700 rounded" title="New Folder">
+              <button onClick={() => addFolder('/')} className="p-1 hover:bg-gray-700 rounded" title="New Folder">
                 <FiFolderPlus className="text-sm" />
               </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-1">
-            {renderTree(tree)}
+            {renderItems('/')}
           </div>
-          {lastSaved && (
-            <div className="p-2 border-t border-gray-700 text-xs text-gray-500">
-              Saved {lastSaved}
-            </div>
-          )}
+          {lastSaved && <div className="p-2 border-t border-gray-700 text-xs text-gray-500">Saved {lastSaved}</div>}
         </div>
       )}
 
@@ -373,38 +301,36 @@ function EditorComponent() {
         </div>
 
         <div className="flex items-center gap-1 bg-[#161b22] p-1 border-b border-gray-700 overflow-x-auto">
-          {allFiles.map(file => (
+          {files.map(file => (
             <div key={file.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-t cursor-pointer text-sm ${
               activeFileId === file.id? 'bg-[#0d1117] text-white' : 'text-gray-400 hover:bg-[#0d1117]'
             }`} onClick={() => setActiveFileId(file.id)} onDoubleClick={() => setSplitFileId(file.id)}>
-              <span>{getFileIcon(file.name)}</span>
+              <span>{getIcon(file.name)}</span>
               <span>{file.name}</span>
-              {allFiles.length > 1 && (
-                <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteNode(file.id) }} />
-              )}
+              {files.length > 1 && <FiX className="text-xs hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteItem(file.id) }} />}
             </div>
           ))}
         </div>
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0">
           <div className={`flex gap-0.5 ${splitFileId? 'col-span-2' : 'col-span-1'}`}>
-            {activeFile && activeFile.type === 'file' && (
+            {activeFile && (
               <Editor
                 height="100%"
                 language={activeFile.language}
                 value={activeFile.content}
-                onChange={v => updateFileContent(activeFileId, v || '')}
+                onChange={v => updateFile(activeFileId, v || '')}
                 theme="vs-dark"
                 options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
                 className={splitFileId? 'w-1/2' : 'w-full'}
               />
             )}
-            {splitFileId && splitFile && splitFile.type === 'file' && (
+            {splitFileId && splitFile && (
               <Editor
                 height="100%"
                 language={splitFile.language}
                 value={splitFile.content}
-                onChange={v => updateFileContent(splitFileId, v || '')}
+                onChange={v => updateFile(splitFileId, v || '')}
                 theme="vs-dark"
                 options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false }}
                 className="w-1/2"
@@ -414,18 +340,11 @@ function EditorComponent() {
           <div className={`flex flex-col gap-2 p-2 bg-[#0d1117] ${splitFileId? 'col-span-2' : ''}`}>
             <div>
               <p className="text-xs mb-1 text-gray-400">Input (stdin):</p>
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder="Input here..."
-                className="w-full h-20 bg-[#161b22] p-2 rounded border border-gray-700 font-mono text-xs resize-none focus:outline-none focus:border-blue-500"
-              />
+              <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Input here..." className="w-full h-20 bg-[#161b22] p-2 rounded border border-gray-700 font-mono text-xs resize-none focus:outline-none focus:border-blue-500" />
             </div>
             <div>
               <p className="text-xs mb-1 text-gray-400">Output:</p>
-              <pre className="w-full h-28 bg-black p-2 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-xs">
-                {output}
-              </pre>
+              <pre className="w-full h-28 bg-black p-2 rounded border border-gray-700 overflow-auto text-green-400 font-mono text-xs">{output}</pre>
             </div>
             {showExplain && (
               <div className="flex-1 flex flex-col">
@@ -433,9 +352,7 @@ function EditorComponent() {
                   <p className="text-xs text-purple-400">AI Explanation:</p>
                   <button onClick={() => setShowExplain(false)} className="text-xs text-gray-500 hover:text-gray-300">✕</button>
                 </div>
-                <div className="w-full flex-1 bg-[#161b22] p-2 rounded border border-purple-700 overflow-auto text-gray-200 text-xs whitespace-pre-wrap">
-                  {explanation}
-                </div>
+                <div className="w-full flex-1 bg-[#161b22] p-2 rounded border border-purple-700 overflow-auto text-gray-200 text-xs whitespace-pre-wrap">{explanation}</div>
               </div>
             )}
           </div>
